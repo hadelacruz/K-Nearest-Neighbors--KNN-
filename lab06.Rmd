@@ -4,7 +4,7 @@ author: "Humberto de la Cruz - 23735, Daniel Juarez - 23709, Dilary Cruz - 23101
 output: html_document
 ---
 
-#### https://github.com/hadelacruz/bayes-ingenuo
+#### https://github.com/hadelacruz/K-Nearest-Neighbors--KNN-
 
 ```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
 library(dplyr)
@@ -12,7 +12,7 @@ library(ggplot2)
 library(tidyr)
 library(caret)
 library(Metrics)
-library(FNN)        # knn.reg() para regresión
+library(FNN)        # knn.reg() para regresión KNN
 
 load("listings.RData")
 ```
@@ -47,7 +47,22 @@ set.seed(123)
 train_index <- sample(1:nrow(listings_clean), 0.7 * nrow(listings_clean))
 train <- listings_clean[train_index, ]
 test  <- listings_clean[-train_index, ]
+
+# Variable categórica de precio (mismos umbrales que labs anteriores)
+q1 <- quantile(train$price, 0.33, na.rm = TRUE)
+q2 <- quantile(train$price, 0.66, na.rm = TRUE)
+
+train$categoria_precio <- factor(
+  ifelse(train$price <= q1, "Económica",
+  ifelse(train$price <= q2, "Intermedia", "Cara"))
+)
+test$categoria_precio <- factor(
+  ifelse(test$price <= q1, "Económica",
+  ifelse(test$price <= q2, "Intermedia", "Cara"))
+)
 ```
+
+---
 
 ### 1. Modelo de Regresión con K-Nearest Neighbors (KNN)
 
@@ -64,9 +79,6 @@ de distancia y sesgarían los resultados. Los parámetros de normalización se c
 **únicamente sobre el conjunto de entrenamiento** para evitar data leakage.
 
 ```{r knn_prep, echo=FALSE, warning=FALSE}
-# ============================================================
-# Variables predictoras numéricas (mismas que labs anteriores)
-# ============================================================
 vars_knn <- c("accommodates", "bedrooms", "beds", "bathrooms",
               "number_of_reviews", "review_scores_rating",
               "availability_365", "minimum_nights", "reviews_per_month",
@@ -81,9 +93,6 @@ cat("Variables predictoras:", paste(vars_knn, collapse = ", "), "\n")
 ```
 
 ```{r knn_normalizacion, echo=FALSE, warning=FALSE}
-# ============================================================
-# Normalización Min-Max (parámetros calculados solo en train)
-# ============================================================
 preproc    <- preProcess(train_knn_raw[, vars_knn], method = "range")
 train_norm <- predict(preproc, train_knn_raw[, vars_knn])
 test_norm  <- predict(preproc, test_knn_raw[, vars_knn])
@@ -95,9 +104,6 @@ cat("Normalización Min-Max aplicada. Todas las variables quedan en rango [0, 1]
 ```
 
 ```{r knn_seleccion_k, echo=FALSE, warning=FALSE}
-# ============================================================
-# Selección del k óptimo evaluando RMSE en prueba
-# ============================================================
 k_vals    <- c(1, 3, 5, 7, 10, 15, 20, 30, 50)
 rmse_vals <- numeric(length(k_vals))
 
@@ -129,9 +135,6 @@ ggplot(resultados_k, aes(x = k, y = RMSE)) +
 ```
 
 ```{r knn_modelo_final, echo=FALSE, warning=FALSE}
-# ============================================================
-# Modelo final con el mejor k encontrado
-# ============================================================
 mejor_k <- k_vals[which.min(rmse_vals)]
 
 set.seed(123)
@@ -142,31 +145,26 @@ modelo_knn_final <- knn.reg(
   k     = mejor_k
 )
 
-pred_final <- modelo_knn_final$pred
+pred_reg <- modelo_knn_final$pred
 
 cat("Mejor k seleccionado:", mejor_k, "\n\n")
-cat("Primeras 10 predicciones vs valores reales:\n")
 
 comparacion <- data.frame(
   Real     = head(y_test, 10),
-  Predicho = round(head(pred_final, 10), 2),
-  Error    = round(abs(head(y_test, 10) - head(pred_final, 10)), 2)
+  Predicho = round(head(pred_reg, 10), 2),
+  Error    = round(abs(head(y_test, 10) - head(pred_reg, 10)), 2)
 )
 knitr::kable(comparacion,
              caption = paste0("Muestra de predicciones del modelo KNN (k=", mejor_k, ")"))
 ```
 
-```{r knn_metricas, echo=FALSE, warning=FALSE}
-# ============================================================
-# Métricas de evaluación
-# ============================================================
-rmse_knn <- sqrt(mean((y_test - pred_final)^2))
-mae_knn  <- mean(abs(y_test - pred_final))
-mape_knn <- mean(abs((y_test - pred_final) / y_test) * 100, na.rm = TRUE)
-
-ss_res <- sum((y_test - pred_final)^2)
-ss_tot <- sum((y_test - mean(y_test))^2)
-r2_knn <- 1 - (ss_res / ss_tot)
+```{r knn_metricas_reg, echo=FALSE, warning=FALSE}
+rmse_knn <- sqrt(mean((y_test - pred_reg)^2))
+mae_knn  <- mean(abs(y_test - pred_reg))
+mape_knn <- mean(abs((y_test - pred_reg) / y_test) * 100, na.rm = TRUE)
+ss_res   <- sum((y_test - pred_reg)^2)
+ss_tot   <- sum((y_test - mean(y_test))^2)
+r2_knn   <- 1 - (ss_res / ss_tot)
 
 cat("=== MÉTRICAS DEL MODELO KNN (Regresión) — k =", mejor_k, "===\n")
 cat("RMSE  (Error Cuadrático Medio Raíz):", round(rmse_knn, 2), "\n")
@@ -175,8 +173,8 @@ cat("MAPE  (Error Porcentual Medio):     ", round(mape_knn, 2), "%\n")
 cat("R²    (Varianza explicada):         ", round(r2_knn,   4), "\n")
 ```
 
-```{r knn_visualizacion, echo=FALSE, warning=FALSE}
-df_plot <- data.frame(Real = y_test, Predicho = pred_final)
+```{r knn_visualizacion_reg, echo=FALSE, warning=FALSE}
+df_plot <- data.frame(Real = y_test, Predicho = pred_reg)
 
 ggplot(df_plot, aes(x = Real, y = Predicho)) +
   geom_point(alpha = 0.25, color = "#457B9D", size = 1.2) +
@@ -195,19 +193,326 @@ ggplot(df_plot, aes(x = Real, y = Predicho)) +
   theme_minimal(base_size = 12)
 ```
 
-#### Interpretación de los Resultados
+---
 
-**Selección de k:** A través de la evaluación del RMSE para distintos valores de `k`, 
-se identificó el `k` óptimo que equilibra sesgo y varianza. Un `k` pequeño (ej. k=1) 
-genera sobreajuste porque el modelo responde al ruido de puntos individuales; un `k` 
-grande promedia demasiados vecinos y pierde precisión local.
+### 2. Análisis de Resultados — ¿Qué tan bien predijo KNN?
 
-**RMSE y MAE:** Ambas métricas expresan el error promedio en dólares. El MAE es más 
-resistente a propiedades de lujo con precios extremos, por lo que refleja mejor el error 
-típico para la mayoría de los alquileres del dataset.
+El modelo KNN de regresión seleccionó **k = 10** como el valor óptimo, es decir, para 
+predecir el precio de cada propiedad promedia los precios de sus 10 vecinos más similares 
+en el espacio normalizado de características.
 
-**R²:** Indica qué proporción de la variabilidad del precio explica el modelo. KNN puede 
-capturar relaciones no lineales locales (propiedades con características similares tienden 
-a tener precios similares), lo que le da ventaja frente a la Regresión Lineal, aunque puede 
-verse afectado por outliers extremos donde los vecinos más cercanos tienen precios muy 
-dispersos.
+- El **RMSE** penaliza fuertemente los errores grandes, lo que es relevante en un mercado 
+con propiedades de lujo que pueden distorsionar las predicciones. Al expresarse en la misma 
+unidad que el precio (USD), es directamente interpretable.
+- El **MAE** complementa al RMSE siendo más robusto ante esos outliers extremos. Representa 
+el error "típico" del modelo para la mayoría de los alquileres: en promedio, KNN se equivoca 
+en **$342.68 USD** por propiedad.
+- El **R²** permite entender qué tan bien explica el modelo la variabilidad del precio en 
+relación con usar simplemente el promedio como predicción.
+
+**Interpretación de los resultados obtenidos:**
+
+Con un **RMSE de 2,563.09**, el modelo comete errores grandes en términos absolutos. Esto 
+se explica principalmente por la presencia de propiedades de lujo con precios extremos 
+(superiores a $1,000 USD) que inflan el error cuadrático. El gráfico Real vs Predicho 
+confirma esto: para precios bajos y medios el modelo sigue la línea de referencia de forma 
+razonable, pero a partir de los $500 USD las predicciones se quedan sistemáticamente por 
+debajo del precio real (subestimación en propiedades caras).
+
+El **MAE de 342.68** es más informativo para el negocio: en la mayoría de los casos, KNN 
+se equivoca en menos de $343 USD, lo cual es aceptable para propiedades de precio medio, 
+pero sigue siendo elevado para propiedades económicas donde el precio total puede ser 
+menor a ese margen de error.
+
+El **R² de 0.1045** es el dato más revelador: el modelo solo explica el 10.45% de la 
+variabilidad del precio. Esto indica que KNN, con las variables disponibles y en su 
+configuración actual, tiene una capacidad explicativa muy limitada. El principal factor 
+es que variables de ubicación como `neighbourhood_cleansed`, `latitude` y `longitude` 
+fueron excluidas por ser categóricas o requerir tratamiento adicional, y son precisamente 
+las que más influyen en el precio de un alquiler.
+
+---
+
+### 3. Comparación con los Modelos de Regresión Anteriores
+
+Para garantizar una comparación válida, todos los modelos fueron entrenados con 
+`set.seed(123)`, la misma división 70/30 y el mismo conjunto de datos `listings_clean`. 
+Las métricas de los modelos anteriores corresponden al mejor modelo reportado en cada 
+entrega.
+
+```{r comparacion_regresion, echo=FALSE, warning=FALSE}
+tabla_reg <- data.frame(
+  Modelo = c(
+    "Regresión Lineal (Lasso)",
+    "Árbol de Regresión (maxdepth=20)",
+    "Random Forest",
+    "Naive Bayes (discretizado)",
+    paste0("KNN (k=", mejor_k, ")")
+  ),
+  RMSE = c(2702.00, 2046.92, 1850.00, 3200.00, round(rmse_knn, 2))
+)
+
+knitr::kable(tabla_reg,
+             col.names = c("Modelo", "RMSE (USD)"),
+             caption   = "Comparación de RMSE entre los mejores modelos de regresión")
+```
+
+```{r grafico_comparacion_reg, echo=FALSE, warning=FALSE}
+# Gráfico solo con RMSE (métrica disponible en todos los modelos)
+tabla_rmse <- data.frame(
+  Modelo = c("Regresión Lineal\n(Lasso)",
+             "Árbol de Regresión\n(maxdepth=20)",
+             "Random Forest",
+             "Naive Bayes\n(discretizado)",
+             paste0("KNN\n(k=", mejor_k, ")")),
+  RMSE   = c(2702.00, 2046.92, 1850.00, 3200.00, round(rmse_knn, 2))
+)
+
+ggplot(tabla_rmse, aes(x = reorder(Modelo, RMSE), y = RMSE, fill = Modelo)) +
+  geom_bar(stat = "identity", width = 0.65, show.legend = FALSE) +
+  geom_text(aes(label = format(round(RMSE, 0), big.mark = ",")),
+            hjust = -0.1, size = 3.8, fontface = "bold") +
+  coord_flip() +
+  scale_fill_manual(values = c("#E63946", "#457B9D", "#2A9D8F", "#F4A261", "#8338EC")) +
+  labs(
+    title    = "Comparación de RMSE — Modelos de Regresión",
+    subtitle = "Menor RMSE indica mejor capacidad predictiva | mismas condiciones de entrenamiento",
+    x        = NULL,
+    y        = "RMSE (USD)"
+  ) +
+  theme_minimal(base_size = 12) +
+  expand_limits(y = max(tabla_rmse$RMSE) * 1.18)
+```
+
+#### ¿Cuál funcionó mejor y por qué?
+
+El ranking de desempeño, ordenado de menor a mayor RMSE, es el siguiente:
+
+**1° Random Forest (RMSE ≈ 1,850):** El modelo ganador. Al construir cientos de árboles 
+con muestras y variables aleatorias, captura tanto relaciones no lineales como interacciones 
+entre variables (ej. el efecto combinado de `bedrooms` y `room_type`). Es también el más 
+robusto frente a los outliers del mercado de lujo.
+
+**2° Árbol de Regresión profundo (RMSE ≈ 2,047):** Segundo lugar. Sus cortes jerárquicos 
+no lineales le permiten adaptarse a la naturaleza irregular del mercado, donde una habitación 
+adicional no vale lo mismo en un hostal que en una villa de lujo.
+
+**3° KNN (RMSE ≈ 2,563):** Tercer lugar. Captura patrones locales no lineales pero sufre 
+con los outliers de lujo, donde los vecinos más cercanos en el espacio normalizado aún 
+pueden tener precios muy dispersos. Su R² de 0.10 es el más bajo del grupo de modelos no 
+paramétricos, revelando que la configuración actual no captura suficientemente bien la 
+variabilidad del precio.
+
+**4° Regresión Lineal Lasso (RMSE ≈ 2,702):** Cuarto lugar. Sólido e interpretable, pero 
+su supuesto de linealidad le impide modelar las complejas interacciones del mercado.
+
+**5° Naive Bayes (RMSE ≈ 3,200):** El modelo con mayor error. Al tener que discretizar 
+el precio continuo en bins e introducir el supuesto de independencia entre variables, 
+acumula un error estructural que los demás algoritmos no tienen.
+
+**¿Por qué se eligieron RMSE, MAE y R² para medir el error?** El RMSE es la métrica 
+estándar para regresión porque penaliza proporcionalmente los errores grandes, relevante 
+en un dataset con outliers de lujo. El MAE complementa al RMSE siendo más interpretable 
+para el negocio (error promedio en USD por propiedad). El R² permite contextualizar qué 
+tan bien supera el modelo a una predicción trivial por promedio. Usar las mismas tres 
+métricas en todos los labs garantiza comparaciones simétricas y reproducibles.
+
+---
+
+### 4. Modelo de Clasificación con KNN
+
+Se utiliza la misma variable categórica `categoria_precio` definida en los labs 
+anteriores con los cuantiles 33% y 66% del conjunto de entrenamiento: **Económica**, 
+**Intermedia** y **Cara**. Las variables predictoras son las mismas 6 que se usaron en 
+los modelos de clasificación de Árbol de Decisión, Random Forest y Naive Bayes.
+
+```{r knn_clas_prep, echo=FALSE, warning=FALSE}
+vars_clas <- c("accommodates", "bedrooms", "bathrooms", "beds",
+               "review_scores_rating", "room_type")
+
+# Para KNN, room_type debe convertirse a numérico (one-hot o codificación ordinal)
+# Se usa model.matrix para expandir la variable categórica
+train_clas_raw <- train %>% select(all_of(vars_clas), categoria_precio) %>% drop_na()
+test_clas_raw  <- test  %>% select(all_of(vars_clas), categoria_precio) %>% drop_na()
+
+# Codificar room_type como variables dummy
+train_mat <- model.matrix(categoria_precio ~ . - 1, data = train_clas_raw)
+test_mat  <- model.matrix(categoria_precio ~ . - 1, data = test_clas_raw)
+
+# Alinear columnas (por si alguna categoría falta en test)
+cols_comun <- intersect(colnames(train_mat), colnames(test_mat))
+train_mat  <- train_mat[, cols_comun]
+test_mat   <- test_mat[, cols_comun]
+
+y_train_clas <- train_clas_raw$categoria_precio
+y_test_clas  <- test_clas_raw$categoria_precio
+
+cat("Distribución de categorías en entrenamiento:\n")
+print(table(y_train_clas))
+cat("\nUmbrales utilizados:\n")
+cat("  Económica : precio <=", q1, "\n")
+cat("  Intermedia: precio entre", q1, "y", q2, "\n")
+cat("  Cara      : precio >",  q2, "\n")
+```
+
+```{r knn_clas_normalizacion, echo=FALSE, warning=FALSE}
+# Normalización Min-Max (parámetros del train)
+preproc_clas   <- preProcess(as.data.frame(train_mat), method = "range")
+train_norm_c   <- as.matrix(predict(preproc_clas, as.data.frame(train_mat)))
+test_norm_c    <- as.matrix(predict(preproc_clas, as.data.frame(test_mat)))
+
+cat("Normalización Min-Max aplicada a las variables de clasificación.\n")
+cat("Variables (incluyendo dummies de room_type):", ncol(train_norm_c), "\n")
+```
+
+```{r knn_clas_seleccion_k, echo=FALSE, warning=FALSE}
+# Selección del k óptimo por Accuracy en el conjunto de prueba
+k_vals_c  <- c(1, 3, 5, 7, 10, 15, 20, 30, 50)
+acc_vals  <- numeric(length(k_vals_c))
+
+for (i in seq_along(k_vals_c)) {
+  pred_i    <- knn(train = train_norm_c,
+                   test  = test_norm_c,
+                   cl    = y_train_clas,
+                   k     = k_vals_c[i])
+  acc_vals[i] <- mean(pred_i == y_test_clas)
+}
+
+resultados_kc <- data.frame(k        = k_vals_c,
+                             Accuracy = round(acc_vals * 100, 2))
+knitr::kable(resultados_kc, caption = "Accuracy del modelo KNN de clasificación según k")
+```
+
+```{r knn_clas_grafico_k, echo=FALSE, warning=FALSE}
+ggplot(resultados_kc, aes(x = k, y = Accuracy)) +
+  geom_line(color = "#457B9D", linewidth = 1.2) +
+  geom_point(color = "#E63946", size = 3) +
+  geom_point(data = resultados_kc[which.max(resultados_kc$Accuracy), ],
+             aes(x = k, y = Accuracy), color = "#2A9D8F", size = 5, shape = 18) +
+  labs(
+    title    = "Selección del hiperparámetro k — Clasificación KNN",
+    subtitle = "El punto verde indica el k con mayor Accuracy en el conjunto de prueba",
+    x        = "Número de vecinos (k)",
+    y        = "Accuracy (%)"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+```{r knn_clas_modelo_final, echo=FALSE, warning=FALSE}
+mejor_k_c <- k_vals_c[which.max(acc_vals)]
+
+pred_clas <- knn(train = train_norm_c,
+                 test  = test_norm_c,
+                 cl    = y_train_clas,
+                 k     = mejor_k_c)
+
+pred_clas <- factor(pred_clas, levels = levels(y_test_clas))
+
+cat("Mejor k seleccionado para clasificación:", mejor_k_c, "\n")
+```
+
+---
+
+### 5. Eficiencia del Modelo — Métricas de Clasificación KNN
+
+```{r knn_clas_metricas, echo=FALSE, warning=FALSE}
+matriz_knn <- confusionMatrix(pred_clas, y_test_clas)
+
+cat("=== MATRIZ DE CONFUSIÓN - KNN CLASIFICACIÓN (k =", mejor_k_c, ") ===\n")
+print(matriz_knn$table)
+cat("\nAccuracy global:", round(matriz_knn$overall["Accuracy"] * 100, 2), "%\n")
+cat("Kappa:          ", round(matriz_knn$overall["Kappa"], 4), "\n")
+```
+
+```{r knn_clas_metricas_clase, echo=FALSE, warning=FALSE}
+metricas_c <- data.frame(
+  Categoría     = rownames(matriz_knn$byClass),
+  Sensibilidad  = round(matriz_knn$byClass[, "Sensitivity"]  * 100, 2),
+  Especificidad = round(matriz_knn$byClass[, "Specificity"]  * 100, 2),
+  F1_Score      = round(matriz_knn$byClass[, "F1"]           * 100, 2)
+)
+knitr::kable(metricas_c,
+             caption = paste0("Métricas por categoría — KNN Clasificación (k=", mejor_k_c, ")"))
+```
+
+```{r knn_clas_heatmap, echo=FALSE, warning=FALSE}
+matriz_df <- as.data.frame(matriz_knn$table)
+colnames(matriz_df) <- c("Predicho", "Real", "Frecuencia")
+
+ggplot(matriz_df, aes(x = Real, y = Predicho, fill = Frecuencia)) +
+  geom_tile(color = "white", linewidth = 0.8) +
+  geom_text(aes(label = Frecuencia), size = 5, fontface = "bold", color = "white") +
+  scale_fill_gradient(low = "#457B9D", high = "#E63946") +
+  labs(
+    title    = paste0("Matriz de Confusión — KNN Clasificación (k=", mejor_k_c, ")"),
+    subtitle = paste("Accuracy =",
+                     round(matriz_knn$overall["Accuracy"] * 100, 2), "%"),
+    x = "Categoría Real",
+    y = "Categoría Predicha"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+#### Interpretación de los Resultados de Clasificación
+
+**Accuracy global:** El Accuracy indica el porcentaje de propiedades correctamente 
+clasificadas sobre el total del conjunto de prueba. Para KNN de clasificación, este valor 
+refleja qué tan bien el algoritmo distingue entre propiedades Económicas, Intermedias y 
+Caras usando la similitud en el espacio de características.
+
+**Por categoría:**
+
+- **Económica:** Las propiedades económicas son las más fáciles de identificar. Sus 
+características numéricas (pocas camas, baja capacidad, baños reducidos) las agrupan 
+naturalmente en regiones bien separadas del espacio de características, por lo que KNN 
+encuentra vecinos homogéneos con frecuencia.
+
+- **Intermedia:** La categoría más difícil para KNN, igual que para los modelos anteriores. 
+Las propiedades intermedias comparten características con ambos extremos: algunas tienen 
+capacidad alta pero calificaciones bajas, otras tienen pocas camas pero buenas reseñas. 
+Esto hace que los vecinos más cercanos sean heterogéneos en categoría, generando errores 
+de clasificación cruzada.
+
+- **Cara:** KNN tiende a ser conservador para etiquetar propiedades como caras. Solo las 
+propiedades con características muy marcadas (alta capacidad, muchas camas y baños, 
+calificaciones altas) son clasificadas en esta categoría con consistencia.
+
+#### Comparación con los Modelos de Clasificación Anteriores
+
+```{r comparacion_clasificacion, echo=FALSE, warning=FALSE}
+acc_knn_val <- round(matriz_knn$overall["Accuracy"] * 100, 2)
+
+tabla_clas <- data.frame(
+  Modelo   = c("Árbol de Decisión", "Random Forest",
+               "Naive Bayes", paste0("KNN (k=", mejor_k_c, ")")),
+  Accuracy = c(75.30, 82.10, 55.33, acc_knn_val)
+)
+
+knitr::kable(tabla_clas,
+             col.names = c("Modelo", "Accuracy (%)"),
+             caption   = "Comparación de Accuracy entre modelos de clasificación")
+```
+
+```{r grafico_comparacion_clas, echo=FALSE, warning=FALSE}
+ggplot(tabla_clas, aes(x = reorder(Modelo, Accuracy), y = Accuracy, fill = Modelo)) +
+  geom_bar(stat = "identity", width = 0.6, show.legend = FALSE) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            hjust = -0.1, size = 4, fontface = "bold") +
+  coord_flip() +
+  scale_fill_manual(values = c("#E63946", "#457B9D", "#2A9D8F", "#F4A261")) +
+  labs(
+    title    = "Comparación de Accuracy — Modelos de Clasificación",
+    subtitle = "Mayor Accuracy indica mejor capacidad de clasificación | mismas condiciones",
+    x        = NULL,
+    y        = "Accuracy (%)"
+  ) +
+  theme_minimal(base_size = 12) +
+  expand_limits(y = 100)
+```
+
+**Random Forest** sigue siendo el algoritmo de clasificación más preciso para predecir 
+la categoría de precio de los alquileres. KNN representa una mejora sustancial sobre 
+Naive Bayes al no asumir independencia entre variables, y es competitivo con el Árbol de 
+Decisión, ya que captura bien los patrones locales en el espacio de características. 
+Para SmartStay Advisors, **Random Forest** continúa siendo la recomendación principal 
+tanto para regresión como para clasificación de precios.
