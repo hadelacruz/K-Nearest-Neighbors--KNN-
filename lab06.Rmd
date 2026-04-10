@@ -1,0 +1,213 @@
+---
+title: "Laboratorio 6 - KNN (SmartStay Advisors)"
+author: "Humberto de la Cruz - 23735, Daniel Juarez - 23709, Dilary Cruz - 231010"
+output: html_document
+---
+
+#### https://github.com/hadelacruz/bayes-ingenuo
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(Metrics)
+library(FNN)        # knn.reg() para regresión
+
+load("listings.RData")
+```
+
+```{r preparacion, echo=FALSE, warning=FALSE}
+# ============================================================
+# PREPARACIÓN DE DATOS - IDÉNTICA A LABS ANTERIORES
+# ============================================================
+colmutils <- c(
+  "price", "accommodates", "bedrooms", "beds", "bathrooms",
+  "latitude", "longitude", "property_type", "room_type",
+  "number_of_reviews", "review_scores_rating", "review_scores_location",
+  "availability_365", "estimated_occupancy_l365d", "minimum_nights",
+  "neighbourhood_cleansed", "host_is_superhost", "reviews_per_month", 
+  "review_scores_value"
+)
+
+listings_clean <- listings[, colmutils] %>%
+  mutate(price = as.numeric(gsub("[\\$,]", "", price))) %>%
+  drop_na(price)
+
+listings_clean <- listings_clean %>%
+  mutate(
+    room_type              = as.factor(room_type),
+    property_type          = as.factor(property_type),
+    neighbourhood_cleansed = as.factor(neighbourhood_cleansed),
+    host_is_superhost      = as.factor(host_is_superhost)
+  )
+
+# MISMA semilla y misma división que Labs anteriores
+set.seed(123)
+train_index <- sample(1:nrow(listings_clean), 0.7 * nrow(listings_clean))
+train <- listings_clean[train_index, ]
+test  <- listings_clean[-train_index, ]
+```
+
+### 1. Modelo de Regresión con K-Nearest Neighbors (KNN)
+
+KNN es un algoritmo no paramétrico que predice el valor de una observación nueva 
+calculando el promedio de los `k` vecinos más cercanos en el espacio de características. 
+A diferencia de los modelos anteriores, KNN no construye una función explícita durante 
+el entrenamiento: memoriza todos los puntos y realiza el cálculo al momento de predecir 
+(*lazy learner*).
+
+Un paso obligatorio antes de aplicar KNN es **normalizar** todas las variables numéricas, 
+ya que el algoritmo mide distancias euclidianas. Variables con rangos muy distintos 
+(por ejemplo, `price` en cientos vs. `minimum_nights` en días) dominarían el cálculo 
+de distancia y sesgarían los resultados. Los parámetros de normalización se calculan 
+**únicamente sobre el conjunto de entrenamiento** para evitar data leakage.
+
+```{r knn_prep, echo=FALSE, warning=FALSE}
+# ============================================================
+# Variables predictoras numéricas (mismas que labs anteriores)
+# ============================================================
+vars_knn <- c("accommodates", "bedrooms", "beds", "bathrooms",
+              "number_of_reviews", "review_scores_rating",
+              "availability_365", "minimum_nights", "reviews_per_month",
+              "review_scores_value")
+
+train_knn_raw <- train %>% select(all_of(vars_knn), price) %>% drop_na()
+test_knn_raw  <- test  %>% select(all_of(vars_knn), price) %>% drop_na()
+
+cat("Observaciones en entrenamiento:", nrow(train_knn_raw), "\n")
+cat("Observaciones en prueba:       ", nrow(test_knn_raw), "\n")
+cat("Variables predictoras:", paste(vars_knn, collapse = ", "), "\n")
+```
+
+```{r knn_normalizacion, echo=FALSE, warning=FALSE}
+# ============================================================
+# Normalización Min-Max (parámetros calculados solo en train)
+# ============================================================
+preproc    <- preProcess(train_knn_raw[, vars_knn], method = "range")
+train_norm <- predict(preproc, train_knn_raw[, vars_knn])
+test_norm  <- predict(preproc, test_knn_raw[, vars_knn])
+
+y_train <- train_knn_raw$price
+y_test  <- test_knn_raw$price
+
+cat("Normalización Min-Max aplicada. Todas las variables quedan en rango [0, 1].\n")
+```
+
+```{r knn_seleccion_k, echo=FALSE, warning=FALSE}
+# ============================================================
+# Selección del k óptimo evaluando RMSE en prueba
+# ============================================================
+k_vals    <- c(1, 3, 5, 7, 10, 15, 20, 30, 50)
+rmse_vals <- numeric(length(k_vals))
+
+for (i in seq_along(k_vals)) {
+  mod_i        <- knn.reg(train = as.matrix(train_norm),
+                           test  = as.matrix(test_norm),
+                           y     = y_train,
+                           k     = k_vals[i])
+  rmse_vals[i] <- sqrt(mean((y_test - mod_i$pred)^2))
+}
+
+resultados_k <- data.frame(k = k_vals, RMSE = round(rmse_vals, 2))
+knitr::kable(resultados_k, caption = "RMSE del modelo KNN según el valor de k")
+```
+
+```{r knn_grafico_k, echo=FALSE, warning=FALSE}
+ggplot(resultados_k, aes(x = k, y = RMSE)) +
+  geom_line(color = "#457B9D", linewidth = 1.2) +
+  geom_point(color = "#E63946", size = 3) +
+  geom_point(data = resultados_k[which.min(resultados_k$RMSE), ],
+             aes(x = k, y = RMSE), color = "#2A9D8F", size = 5, shape = 18) +
+  labs(
+    title    = "Selección del hiperparámetro k en KNN",
+    subtitle = "El punto verde indica el k con menor RMSE en el conjunto de prueba",
+    x        = "Número de vecinos (k)",
+    y        = "RMSE (USD)"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+```{r knn_modelo_final, echo=FALSE, warning=FALSE}
+# ============================================================
+# Modelo final con el mejor k encontrado
+# ============================================================
+mejor_k <- k_vals[which.min(rmse_vals)]
+
+set.seed(123)
+modelo_knn_final <- knn.reg(
+  train = as.matrix(train_norm),
+  test  = as.matrix(test_norm),
+  y     = y_train,
+  k     = mejor_k
+)
+
+pred_final <- modelo_knn_final$pred
+
+cat("Mejor k seleccionado:", mejor_k, "\n\n")
+cat("Primeras 10 predicciones vs valores reales:\n")
+
+comparacion <- data.frame(
+  Real     = head(y_test, 10),
+  Predicho = round(head(pred_final, 10), 2),
+  Error    = round(abs(head(y_test, 10) - head(pred_final, 10)), 2)
+)
+knitr::kable(comparacion,
+             caption = paste0("Muestra de predicciones del modelo KNN (k=", mejor_k, ")"))
+```
+
+```{r knn_metricas, echo=FALSE, warning=FALSE}
+# ============================================================
+# Métricas de evaluación
+# ============================================================
+rmse_knn <- sqrt(mean((y_test - pred_final)^2))
+mae_knn  <- mean(abs(y_test - pred_final))
+mape_knn <- mean(abs((y_test - pred_final) / y_test) * 100, na.rm = TRUE)
+
+ss_res <- sum((y_test - pred_final)^2)
+ss_tot <- sum((y_test - mean(y_test))^2)
+r2_knn <- 1 - (ss_res / ss_tot)
+
+cat("=== MÉTRICAS DEL MODELO KNN (Regresión) — k =", mejor_k, "===\n")
+cat("RMSE  (Error Cuadrático Medio Raíz):", round(rmse_knn, 2), "\n")
+cat("MAE   (Error Absoluto Medio):       ", round(mae_knn,  2), "\n")
+cat("MAPE  (Error Porcentual Medio):     ", round(mape_knn, 2), "%\n")
+cat("R²    (Varianza explicada):         ", round(r2_knn,   4), "\n")
+```
+
+```{r knn_visualizacion, echo=FALSE, warning=FALSE}
+df_plot <- data.frame(Real = y_test, Predicho = pred_final)
+
+ggplot(df_plot, aes(x = Real, y = Predicho)) +
+  geom_point(alpha = 0.25, color = "#457B9D", size = 1.2) +
+  geom_abline(slope = 1, intercept = 0, color = "red",
+              linetype = "dashed", linewidth = 1) +
+  scale_x_continuous(limits = c(0, quantile(y_test, 0.99))) +
+  scale_y_continuous(limits = c(0, quantile(y_test, 0.99))) +
+  labs(
+    title    = paste0("KNN Regresión (k=", mejor_k, "): Precio Real vs Predicho"),
+    subtitle = paste("RMSE =", round(rmse_knn, 2),
+                     "| MAE =", round(mae_knn, 2),
+                     "| R² =",  round(r2_knn, 4)),
+    x = "Precio Real (USD)",
+    y = "Precio Predicho (USD)"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+#### Interpretación de los Resultados
+
+**Selección de k:** A través de la evaluación del RMSE para distintos valores de `k`, 
+se identificó el `k` óptimo que equilibra sesgo y varianza. Un `k` pequeño (ej. k=1) 
+genera sobreajuste porque el modelo responde al ruido de puntos individuales; un `k` 
+grande promedia demasiados vecinos y pierde precisión local.
+
+**RMSE y MAE:** Ambas métricas expresan el error promedio en dólares. El MAE es más 
+resistente a propiedades de lujo con precios extremos, por lo que refleja mejor el error 
+típico para la mayoría de los alquileres del dataset.
+
+**R²:** Indica qué proporción de la variabilidad del precio explica el modelo. KNN puede 
+capturar relaciones no lineales locales (propiedades con características similares tienden 
+a tener precios similares), lo que le da ventaja frente a la Regresión Lineal, aunque puede 
+verse afectado por outliers extremos donde los vecinos más cercanos tienen precios muy 
+dispersos.
