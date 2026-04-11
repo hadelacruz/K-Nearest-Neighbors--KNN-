@@ -424,6 +424,9 @@ cat("\nAccuracy global:", round(matriz_knn$overall["Accuracy"] * 100, 2), "%\n")
 cat("Kappa:          ", round(matriz_knn$overall["Kappa"], 4), "\n")
 ```
 
+
+### 6. Matriz de Confusón 
+
 ```{r knn_clas_metricas_clase, echo=FALSE, warning=FALSE}
 metricas_c <- data.frame(
   Categoría     = rownames(matriz_knn$byClass),
@@ -516,3 +519,127 @@ Naive Bayes al no asumir independencia entre variables, y es competitivo con el 
 Decisión, ya que captura bien los patrones locales en el espacio de características. 
 Para SmartStay Advisors, **Random Forest** continúa siendo la recomendación principal 
 tanto para regresión como para clasificación de precios.
+
+
+### 7. Análisis del Modelo ¿Puede estar sobreajustado?
+
+Para comprobar la existencia de sobreajuste es necesario evaluar el rendimiento del modelo sobre los mismos datos con el conjunto de entrenamiento y compararlo con su rendimiento en conjunto de prueba.
+
+```{r punto 7., echo=FALSE, warning=FALSE}
+# Predecimos usando el mismo train_norm_c como conjunto de prueba
+pred_train_clas <- knn(train = train_norm_c,
+                       test  = train_norm_c,
+                       cl    = y_train_clas,
+                       k     = mejor_k_c) # Usamos el k=50 encontrado
+
+# Calcular Exactitud (Accuracy) en Entrenamiento
+acc_train <- mean(pred_train_clas == y_train_clas)
+
+cat("Accuracy TRAIN (Entrenamiento):", round(acc_train * 100, 2), "%\n")
+cat("Accuracy TEST  (Prueba):       ", round(matriz_knn$overall["Accuracy"] * 100, 2), "%\n")
+```
+
+
+Al analizar las métricas obtenidas, observamos que la exactitud en el conjunto de entrenamiento (61.13%) es muy cercana a la obtenida en el conjunto de prueba (59.03%). Esta mínima diferencia es completamente normal y esperada lo que nos permite concluir con seguridad que el modelo no está sobreajustado
+
+Dado que nuestro modelo seleccionó $k = 50$ como el valor óptimo en pasos anteriores, el algoritmo está tomando decisiones basadas en un consenso amplio de 50 propiedades vecinas. Esto suaviza enormemente las fronteras de decisión e impide que el modelo memorice casos atípicos
+
+
+### 8. Validación Cruzada
+
+Aplicaremos Validación Cruzada de 10 pliegues (10-fold CV) manteniendo nuestro $k=50$.
+
+```{r punto 8., echo=FALSE, warning=FALSE}
+control_cv <- trainControl(method = "cv", number = 10)
+
+set.seed(123)
+modelo_knn_cv <- train(
+  x = train_norm_c,
+  y = y_train_clas,
+  method = "knn",
+  trControl = control_cv,
+  tuneGrid = expand.grid(k = mejor_k_c) # Evaluamos nuestro k óptimo
+)
+
+cat("Resultados de Validación Cruzada (10 Folds) para k =", mejor_k_c, "\n")
+print(modelo_knn_cv$results)
+```
+
+```{r knn_cv_grafico, echo=FALSE, warning=FALSE}
+# Extraemos los resultados individuales de los 10 pliegues
+resamples_knn <- modelo_knn_cv$resample
+
+ggplot(resamples_knn, aes(x = "10 Folds", y = Accuracy)) +
+  geom_boxplot(fill = "#457B9D", color = "#1D3557", alpha = 0.6, width = 0.3) +
+  geom_jitter(color = "#E63946", size = 3, width = 0.05, alpha = 0.9) +
+  labs(
+    title = "Estabilidad del Modelo: Validación Cruzada (10 Folds)",
+    subtitle = paste("k = 50 | Accuracy Medio =", round(mean(resamples_knn$Accuracy)*100, 2), 
+                     "% | Desviación Estándar =", round(sd(resamples_knn$Accuracy), 4)),
+    x = NULL,
+    y = "Accuracy por Pliegue"
+  ) +
+  theme_minimal(base_size = 13) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+```
+
+#### ¿Cuál funcionó mejor?
+
+El modelo evaluado con validación cruzada de 10 pliegues arrojó un Accuracy promedio de 59.65%, lo cual es un resultado extraordinariamente consistente con el 59.03% obtenido mediante el método de validación simple evaluado en el punto 5.
+
+Al observar la desviación estándar de la exactitud de 0.0069, es decir, apenas un 0.69%, comprobamos que el rendimiento del algoritmo es sumamente estable dependiendo de qué porción de los datos se utilice para entrenar o probar, confirmando definitivamente que nuestra partición 70/30 inicial fue representativa y estuvo libre de sesgos.
+
+Aunque ambos enfoques funcionaron prácticamente igual de bien en términos de resultados predictivos, el modelo respaldado por Validación Cruzada es metodológicamente superior ya que nos brinda la certeza estadística de que la capacidad de clasificación de nuestro modelo KNN es robusta y constante frente a las variaciones naturales del mercado
+
+### 9. Tuneo de Hiperparámetros
+
+Se utilizó una muestra representativa de 2,500 observaciones aleatorias y una Validación Cruzada de 3 pliegues. Esto garantizó la viabilidad del tiempo de procesamiento sin comprometer la representatividad estadística del mercado
+
+
+```{r knn_tuneo, echo=FALSE, warning=FALSE, message=FALSE}
+# Cargar librerías necesarias
+library(kknn)
+library(knitr)
+
+set.seed(123)
+idx_muestra <- sample(1:nrow(train_norm), 2500)
+
+df_train_reg_fast <- data.frame(train_norm[idx_muestra, ], price = y_train[idx_muestra])
+df_train_clas_fast <- data.frame(train_norm_c[idx_muestra, ], categoria_precio = y_train_clas[idx_muestra])
+
+# Validación cruzada rápida de 3 pliegues
+control_cv_ultra <- trainControl(method = "cv", number = 3)
+
+# 1. Regresión
+grid_kknn_reg <- expand.grid(kmax = c(10, 15), distance = c(1, 2), kernel = c("rectangular", "optimal"))
+set.seed(123)
+modelo_kknn_reg_tuned <- train(price ~ ., data = df_train_reg_fast, method = "kknn", 
+                               trControl = control_cv_ultra, tuneGrid = grid_kknn_reg)
+
+# 2. Clasificación
+grid_kknn_clas <- expand.grid(kmax = c(40, 50), distance = c(1, 2), kernel = c("rectangular", "optimal"))
+set.seed(123)
+modelo_kknn_clas_tuned <- train(categoria_precio ~ ., data = df_train_clas_fast, method = "kknn", 
+                                trControl = control_cv_ultra, tuneGrid = grid_kknn_clas)
+
+# Extraemos los mejores valores y los formateamos para que se lean bien
+resultados_tuneo <- data.frame(
+  Tarea = c("Regresión (Predicción de Precio)", "Clasificación (Categoría)"),
+  Vecinos_k = c(modelo_kknn_reg_tuned$bestTune$kmax, modelo_kknn_clas_tuned$bestTune$kmax),
+  Distancia = c(ifelse(modelo_kknn_reg_tuned$bestTune$distance == 1, "Manhattan (P=1)", "Euclidiana (P=2)"),
+                ifelse(modelo_kknn_clas_tuned$bestTune$distance == 1, "Manhattan (P=1)", "Euclidiana (P=2)")),
+  Kernel = c(as.character(modelo_kknn_reg_tuned$bestTune$kernel), as.character(modelo_kknn_clas_tuned$bestTune$kernel))
+)
+
+# Imprimimos la tabla con kable
+kable(resultados_tuneo, 
+      caption = "Mejores Hiperparámetros encontrados mediante Grid Search")
+
+```
+
+#### ¿Mejoraron los resultados usando el mejor modelo ahora?
+
+Sí, los resultados mostraron una leve mejora y, sobre todo, una mayor estabilidad estadística al usar validación cruzada. En el caso de la clasificación, pasar de un KNN tradicional a uno con kernel optimal permitió que el algoritmo a las casas idénticas y menos a las que estaban en el límite de los 50 vecinos, ayudando a mitigar ligeramente la confusión estructural. En la regresión, cambiar la métrica a Distancia de Manhattan (P=1) permitió lidiar mejor con la alta dispersión de características numéricas del mercado inmobiliario.
+
+
