@@ -913,45 +913,48 @@ dispersión de características numéricas del mercado inmobiliario.</p>
 </div>
 <div id="métrica-de-distancia-y-valor-de-p" class="section level3">
 <h3>10. Métrica de distancia y valor de p</h3>
-<p>A partir del proceso de tuneo de hiperparámetros realizado con
-<code>kknn</code>, se identificaron las configuraciones óptimas para los
-modelos de regresión y clasificación.</p>
-<p>En el caso de la regresión, el mejor modelo utilizó una métrica de
-distancia basada en el parámetro <code>p</code>, donde: - <strong>p = 1
-corresponde a la distancia Manhattan</strong> - <strong>p = 2
-corresponde a la distancia Euclidiana</strong></p>
-<p>La distancia Manhattan resultó ser más adecuada para este problema,
-ya que calcula la distancia como la suma de diferencias absolutas entre
-variables. Esto la hace más robusta frente a valores extremos
-(<em>outliers</em>), los cuales están presentes en el dataset debido a
-propiedades de lujo con precios significativamente más altos que el
-promedio.</p>
-<p>La distancia euclidiana penaliza más las diferencias grandes debido
-al uso de cuadrados, lo que puede amplificar el impacto de variables con
-alta dispersión y afectar negativamente la calidad de las
-predicciones.</p>
+<p>En el proceso de tuneo de hiperparámetros realizado mediante
+<code>kknn</code>, se obtuvieron las siguientes configuraciones
+óptimas:</p>
+<ul>
+<li><strong>Regresión:</strong> k = 10, distancia = Manhattan (p = 1),
+kernel = rectangular</li>
+<li><strong>Clasificación:</strong> k = 50, distancia = Euclidiana (p =
+2), kernel = optimal</li>
+</ul>
+<p>A partir de estos resultados, se puede analizar por qué estas
+configuraciones fueron las más adecuadas para el problema.</p>
+<p>El parámetro <strong>p</strong> define la métrica de distancia
+utilizada en el algoritmo KNN: - <strong>p = 1</strong> corresponde a la
+distancia Manhattan - <strong>p = 2</strong> corresponde a la distancia
+Euclidiana</p>
+<p>La distancia Manhattan resultó ser más adecuada en el contexto del
+dataset, ya que calcula la distancia como la suma de diferencias
+absolutas entre variables, lo que la hace más robusta frente a valores
+extremos (<em>outliers</em>). Esto es particularmente importante en el
+mercado de Airbnb, donde existen propiedades de lujo con precios
+significativamente más altos que el promedio, generando alta dispersión
+en los datos.</p>
+<p>Por otro lado, la distancia euclidiana penaliza más las diferencias
+grandes debido al uso de cuadrados, lo que puede amplificar el impacto
+de estas observaciones extremas y afectar negativamente la calidad de
+las predicciones.</p>
 <p>En cuanto al valor de <strong>k</strong>, los resultados muestran que
-valores relativamente altos; por ejemplo, k = 50 en clasificación y
-valores entre 10 y 15 en regresión durante el tuneo, producen mejores
-resultados. Esto se debe a que:</p>
+valores relativamente altos (como los encontrados en el tuneo) producen
+mejores resultados. Esto se debe a que:</p>
 <ul>
 <li>Valores pequeños de k generan modelos muy sensibles al ruido
 (<em>alta varianza</em>).</li>
 <li>Valores grandes de k suavizan las predicciones, reduciendo la
 varianza y mejorando la generalización.</li>
 </ul>
-<p>Dado que el mercado de Airbnb presenta alta variabilidad entre
-propiedades, utilizar un número mayor de vecinos permite obtener
-predicciones más estables y representativas del comportamiento general
-del mercado.</p>
-<p>Ahora bien, el uso de kernels como <code>optimal</code> en el modelo
-KNN permitió asignar mayor peso a los vecinos más cercanos, mejorando
-ligeramente la capacidad predictiva del modelo en comparación con el
-enfoque tradicional.</p>
-<p>En el proceso de tuneo realizado, se obtuvo como mejor configuración:
-- Regresión: k = X, distancia = Manhattan (p = 1), kernel = optimal -
-Clasificación: k = Y, distancia = Euclidiana/Manhattan (según
-resultado), kernel = optimal</p>
+<p>Dado que el dataset presenta alta variabilidad entre propiedades,
+utilizar un mayor número de vecinos permite obtener predicciones más
+estables y representativas del comportamiento general del mercado.</p>
+<p>Ahora bien, el uso del kernel <strong>optimal</strong> permite
+asignar mayor peso a los vecinos más cercanos, lo que mejora la
+precisión del modelo al priorizar observaciones más relevantes dentro
+del conjunto de vecinos seleccionados.</p>
 </div>
 <div id="comparación-de-eficiencia-entre-algoritmos" class="section level3">
 <h3>11. Comparación de eficiencia entre algoritmos</h3>
@@ -963,27 +966,31 @@ Decisión</strong> con <strong>75.3%</strong>. Por su parte, el modelo
 <strong>KNN</strong> alcanza un accuracy de <strong>59.03%</strong>,
 mientras que <strong>Naive Bayes</strong> obtiene el menor rendimiento
 con <strong>55.33%</strong>.</p>
-<p>Esta diferencia en desempeño se explica principalmente por la
-naturaleza de cada algoritmo. Random Forest, al combinar múltiples
-árboles de decisión, logra capturar relaciones no lineales complejas
-entre las variables, lo cual es fundamental en un dataset como el de
-Airbnb donde las características de las propiedades interactúan de
-manera no trivial.</p>
-<p>El Árbol de Decisión, aunque también captura relaciones no lineales,
-es más sensible a la variabilidad de los datos y tiende a generalizar
-menos que Random Forest, lo que explica su segundo lugar.</p>
-<p>En el caso de <strong>KNN</strong>, su desempeño inferior se debe a
-que el algoritmo basa sus predicciones únicamente en la cercanía entre
+<p>Esta comparación visual permite identificar claramente las
+diferencias de desempeño entre los modelos bajo las mismas condiciones
+de entrenamiento y prueba, garantizando una evaluación justa.</p>
+<p>El mejor desempeño de <strong>Random Forest</strong> se debe a su
+capacidad para capturar relaciones no lineales complejas y combinar
+múltiples árboles de decisión, lo que le permite modelar de forma más
+efectiva la interacción entre variables como número de habitaciones,
+capacidad, baños y calificaciones.</p>
+<p>El <strong>Árbol de Decisión</strong>, aunque también captura
+relaciones no lineales, es más sensible a la variabilidad de los datos y
+tiende a generalizar menos que Random Forest, lo que explica su
+desempeño intermedio.</p>
+<p>En el caso de <strong>KNN</strong>, su rendimiento inferior se debe a
+que el algoritmo basa sus predicciones en la cercanía entre
 observaciones. En un dataset con alta variabilidad y presencia de
-outliers, como el mercado de alquileres, los vecinos más cercanos no
-siempre pertenecen a la misma categoría, especialmente en la clase
-intermedia, lo que genera errores de clasificación.</p>
-<p>Ahora bien, <strong>Naive Bayes</strong> presenta el menor accuracy
+outliers, como el mercado de Airbnb, los vecinos más cercanos no siempre
+pertenecen a la misma categoría, especialmente en la clase intermedia,
+lo que genera errores de clasificación.</p>
+<p>Ahora bien, <strong>Naive Bayes</strong> presenta el menor desempeño
 debido a su supuesto de independencia entre variables, el cual no se
-cumple en este contexto, ya que variables como número de habitaciones,
-camas y capacidad están altamente correlacionadas.</p>
-<p>En términos de eficiencia computacional, aunque no se midió
-explícitamente el tiempo de ejecución, se puede inferir que:</p>
+cumple en este contexto, ya que muchas de las variables están
+correlacionadas.</p>
+<p>Aunque no se midió explícitamente el tiempo de ejecución en este
+experimento, se puede inferir el comportamiento computacional de los
+modelos:</p>
 <ul>
 <li><strong>KNN</strong> es el más costoso en predicción, ya que debe
 calcular distancias contra todos los datos en cada nueva
@@ -996,11 +1003,23 @@ como en predicción.</li>
 computacionalmente.</li>
 </ul>
 <p><strong>Conclusión:</strong></p>
-<p>El modelo más adecuado para este problema es <strong>Random
-Forest</strong>, ya que ofrece el mejor balance entre precisión y
-capacidad de generalización. KNN, aunque útil para capturar patrones
-locales, no logra competir con modelos basados en árboles en este
-contexto debido a la complejidad y variabilidad del dataset.</p>
+<p>A partir del análisis comparativo, se concluye que <strong>Random
+Forest es el modelo más adecuado para este problema</strong>, ya que
+logra el mayor nivel de precisión y demuestra una alta capacidad para
+capturar relaciones complejas entre variables. Esto es especialmente
+relevante en el contexto del mercado de Airbnb, donde el precio depende
+de múltiples factores que no se comportan de forma lineal.</p>
+<p>El <strong>Árbol de Decisión</strong> representa una alternativa
+viable cuando se prioriza la interpretabilidad, mientras que
+<strong>KNN</strong>, aunque útil para identificar patrones locales,
+presenta limitaciones debido a la variabilidad del dataset y su costo
+computacional.</p>
+<p>El <strong>Naive Bayes</strong> resulta ser el modelo menos adecuado
+debido a su supuesto de independencia entre variables.</p>
+<p>Los modelos basados en ensambles, como Random Forest, son más
+robustos y efectivos para problemas reales con alta complejidad, por lo
+que se recomienda su uso para apoyar la toma de decisiones en SmartStay
+Advisors.</p>
 </div>
 
 
